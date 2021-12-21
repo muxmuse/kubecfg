@@ -9,7 +9,7 @@ require (
 	github.com/go-bindata/go-bindata v1.0.0
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-jsonnet v0.18.0
-	github.com/googleapis/gnostic v0.5.5
+	github.com/googleapis/gnostic v0.5.7
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/mattn/go-isatty v0.0.14
 	github.com/mitchellh/copystructure v1.2.0 // indirect
