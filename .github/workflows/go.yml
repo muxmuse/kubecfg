@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - main
+      - mfa
     tags:
       - v*.*.*
   pull_request:
     branches:
       - main
+      - mfa
 
 jobs:
 
@@ -73,6 +75,9 @@ jobs:
           name: kubecfg_${{ runner.os }}_${{ runner.arch }}
           path: kubecfg
           retention-days: 5
+
+      - uses: imjasonh/setup-ko@v0.6
+      - run: ko build
 
   create_release:
     name: Create Release
