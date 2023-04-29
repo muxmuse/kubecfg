@@ -500,9 +500,12 @@ func walkObjects(ctx context.Context, client dynamic.Interface, disco discovery.
 			log.Debugf("Listing %s", gvr)
 			obj, err := rc.List(ctx, listopts)
 			if err != nil {
-				return err
-			}
-			if err = meta.EachListItem(obj, callback); err != nil {
+				if errors.IsForbidden(err) {
+					log.Warnf("%s ignored in garbage collection: %s", gvr, err)
+				} else {
+					return err
+				}
+			} else if err = meta.EachListItem(obj, callback); err != nil {
 				return err
 			}
 		}
