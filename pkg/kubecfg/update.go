@@ -501,7 +501,7 @@ func walkObjects(ctx context.Context, client dynamic.Interface, disco discovery.
 			obj, err := rc.List(ctx, listopts)
 			if err != nil {
 				if errors.IsForbidden(err) {
-					log.Warnf("%s ignored in garbage collection: %s", gvr, err)
+					log.Warnf("%s ignored during garbage collection: %s", gvr, err)
 				} else {
 					return err
 				}
