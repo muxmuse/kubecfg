@@ -24,10 +24,10 @@ jobs:
       VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('gh-action-{0}', github.sha) }}
 
     steps:
-      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3 # v3
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3
 
       - name: Set up Go
-        uses: actions/setup-go@4d34df0c2316fe8122ab82dc22947d607c0c91f9 # v4
+        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
         with:
           go-version: 1.19
           cache: true
@@ -57,7 +57,7 @@ jobs:
       - name: Integration Testing
         if: matrix.os == 'ubuntu-latest'
         run: |
-          go install github.com/onsi/ginkgo/ginkgo@$(go list -f '{{.Version}}' -m github.com/onsi/ginkgo)
+          go install github.com/onsi/ginkgo/v2/ginkgo@$(go list -f '{{.Version}}' -m github.com/onsi/ginkgo/v2)
           make integrationtest GINKGO="ginkgo $GINKGO_FLAGS"
 
       - name: Upload kubecfg artifact
@@ -68,11 +68,21 @@ jobs:
           retention-days: 5
 
       - if: matrix.os == 'ubuntu-latest'
-        uses: imjasonh/setup-ko@ace48d793556083a76f1e3e6068850c1f4a369aa # v0.6
+        uses: ko-build/setup-ko@ace48d793556083a76f1e3e6068850c1f4a369aa # v0.6
+
+      - name: Build OCI image using ko
+        if: matrix.os == 'ubuntu-latest' && github.event.pull_request.head.repo.fork
+        run: ko build -B --push=false --platform linux/amd64,linux/arm/v7,linux/arm64
 
       - name: Build OCI image using ko and push it to ghcr
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && !github.event.pull_request.head.repo.fork
         run: ko build -B --platform linux/amd64,linux/arm/v7,linux/arm64
+
+      - name: Build OCI image using ko , tag and push it to ghcr
+        if: matrix.os == 'ubuntu-latest' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag=$(echo ${{ github.ref }} | cut -c11-)  # get tag name without tags/refs/ prefix.
+          ko build -B --platform linux/amd64,linux/arm/v7,linux/arm64 --tags ${tag}
 
   create_release:
     name: Create Release

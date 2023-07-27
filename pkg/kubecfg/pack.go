@@ -25,15 +25,22 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"sort"
 	"strings"
 
 	"github.com/google/go-jsonnet"
 	"github.com/kubecfg/kubecfg/pkg/oci"
+	"github.com/kubecfg/kubecfg/pkg/version"
 	"github.com/kubecfg/kubecfg/utils"
 	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
+)
+
+const (
+	packMetadataField = "_kubecfg_pack_metadata"
+	packMetadataKey   = "pack.kubecfg.dev/v1alpha1"
 )
 
 // PackCmd represents the eval subcommand
@@ -68,7 +75,33 @@ func (c PackCmd) Run(ctx context.Context, vm *jsonnet.VM, ociPackage string, roo
 		return os.WriteFile(c.OutputFile, bodyBlob.Bytes(), 0666)
 	}
 
-	return c.pushOCIBundle(ctx, ociPackage, bodyBlob.Bytes(), shortEntrypoint)
+	metadata, err := bundleConfigMetadata(vm, rootURL)
+	if err != nil {
+		return err
+	}
+
+	return c.pushOCIBundle(ctx, ociPackage, bodyBlob.Bytes(), shortEntrypoint, metadata)
+}
+
+func bundleConfigMetadata(vm *jsonnet.VM, rootURL *url.URL) (json.RawMessage, error) {
+	packMetadata := map[string]struct {
+		Version string `json:"version"`
+	}{
+		packMetadataKey: {
+			Version: version.Get(),
+		},
+	}
+	base, err := json.Marshal(packMetadata)
+	if err != nil {
+		return nil, err
+	}
+
+	metadataExpr := fmt.Sprintf(`%s + std.get(import %q, %q, {})`, string(base), rootURL, packMetadataField)
+	metadata, err := vm.EvaluateAnonymousSnippet("", metadataExpr)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(metadata), nil
 }
 
 // Writes a targz to w, containing rootURL and all files transitively imported from rootURL.
@@ -102,7 +135,7 @@ func bundleAllDependencies(w io.Writer, vm *jsonnet.VM, rootURL *url.URL) (strin
 	return shortEntrypoint, nil
 }
 
-func (c PackCmd) pushOCIBundle(ctx context.Context, ref string, bodyBlob []byte, entryPoint string) error {
+func (c PackCmd) pushOCIBundle(ctx context.Context, ref string, bodyBlob []byte, entryPoint string, bundleConfigMetadata json.RawMessage) error {
 	repo, err := oci.NewAuthenticatedRepository(ref)
 	if err != nil {
 		return err
@@ -114,7 +147,11 @@ func (c PackCmd) pushOCIBundle(ctx context.Context, ref string, bodyBlob []byte,
 		return err
 	}
 
-	configBlob, err := json.Marshal(utils.OCIBundleConfig{Entrypoint: entryPoint})
+	bundleConfig := utils.OCIBundleConfig{
+		Entrypoint: entryPoint,
+		Metadata:   bundleConfigMetadata,
+	}
+	configBlob, err := json.Marshal(bundleConfig)
 	if err != nil {
 		return err
 	}
@@ -127,6 +164,12 @@ func (c PackCmd) pushOCIBundle(ctx context.Context, ref string, bodyBlob []byte,
 		Config:    configDesc,
 		Layers:    []ocispec.Descriptor{bodyDesc},
 		Versioned: specs.Versioned{SchemaVersion: 2},
+		Annotations: map[string]string{
+			// compatibility with fluxcd ocirepo source
+			"org.opencontainers.image.created":  "1970-01-01T00:00:00Z",
+			"org.opencontainers.image.revision": "unknown",
+			"org.opencontainers.image.source":   "kubecfg pack",
+		},
 	}
 	manifestBlob, err := json.Marshal(manifest)
 	if err != nil {
@@ -181,12 +224,14 @@ func shortNames(urls []*url.URL, rootURL *url.URL) ([]string, string) {
 	return s, strings.TrimPrefix(rootURL.Path, prefix)
 }
 
+// returns common directory part between various paths, including the trailing '/'.
+// If only one path is given, return its directory path
 func findCommonPathPrefix(paths []string) string {
 	if len(paths) == 0 {
 		return ""
 	}
 	if len(paths) == 1 {
-		return paths[0]
+		return path.Dir(paths[0]) + "/"
 	}
 
 	first, last := paths[0], paths[len(paths)-1]

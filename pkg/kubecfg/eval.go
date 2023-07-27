@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/google/go-jsonnet"
 	"github.com/kubecfg/kubecfg/utils"
+	"github.com/kubecfg/ursonnet"
 	"github.com/kubecfg/yaml/v2"
 )
 
@@ -16,6 +19,7 @@ type EvalCmd struct {
 	Expr     string
 	ShowKeys bool
 	Format   string
+	Trace    bool
 }
 
 func (c EvalCmd) Run(ctx context.Context, vm *jsonnet.VM, path string, tla []string) error {
@@ -23,6 +27,7 @@ func (c EvalCmd) Run(ctx context.Context, vm *jsonnet.VM, path string, tla []str
 	if expr == "" {
 		expr = "$"
 	}
+
 	pathURL, err := utils.PathToURL(path)
 	if err != nil {
 		return err
@@ -71,5 +76,24 @@ func (c EvalCmd) Run(ctx context.Context, vm *jsonnet.VM, path string, tla []str
 		return fmt.Errorf("unsupported format %q", c.Format)
 	}
 
+	if c.Trace {
+		if err := traceback(os.Stderr, vm, pathURL, expr, false); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func traceback(w io.Writer, vm *jsonnet.VM, pathURL string, expr string, showAll bool) error {
+	roots, err := ursonnet.Roots(vm, pathURL, expr)
+	if err != nil {
+		return err
+	}
+	for _, r := range roots {
+		if showAll || strings.HasPrefix(r, "file://") {
+			fmt.Fprintln(w, strings.TrimPrefix(r, "file://"))
+		}
+	}
 	return nil
 }
