@@ -78,6 +78,24 @@ local result =
 
   std.assertEqual(std.clamp(42, 0, 10), 10) &&
 
+  local testObj = {
+    a: {
+      b: {
+        c: 1,
+        d: 10,
+      },
+    },
+  };
+  local expectedOverlayObj = {
+    a: {
+      b: {
+        c: 2,
+        d: 10,
+      },
+    },
+  };
+  std.assertEqual(testObj + kubecfg.toOverlay(import 'overlay.json'), expectedOverlayObj) &&
+
   // Testing import of pre-converted chart with standard import
   local chartData = import 'mysql-8.8.26.tgz.bin';
   local testChart = kubecfg.parseHelmChart(
@@ -175,6 +193,26 @@ local result =
   local one = kubecfg.layouts.gvkNsName({}, obj('a'));
   local two = kubecfg.layouts.gvkNsName(one, obj('b'));
   std.assertEqual(two, { 'example.com/v1alpha1.Test': { _: { a: obj('a'), b: obj('b') } } }) &&
+
+  local nested_obj = {
+    foo: {
+      bar: {
+        baz: 'nested!',
+      },
+      hidden:: {
+        qux:: 'sneaky!',
+      },
+    },
+  };
+  std.assertEqual(kubecfg.getPath(nested_obj, 'foo.bar.baz'), 'nested!') &&
+  std.assertEqual(kubecfg.getPath(nested_obj, 'foo.hidden.qux'), 'sneaky!') &&
+  std.assertEqual(kubecfg.getPath(nested_obj, 'foo.hidden.qux', inc_hidden=false), null) &&
+  std.assertEqual(kubecfg.getPath(nested_obj, 'foo.not.exist', default="hello!"), "hello!") &&
+  std.assertEqual(kubecfg.getPath(nested_obj, 'path.not.exist', 'default!'), 'default!') &&
+  std.assertEqual(kubecfg.objectHasPath(nested_obj, 'foo.bar.baz'), true) &&
+  std.assertEqual(kubecfg.objectHasPath(nested_obj, 'foo.not.exist'), false) &&
+  std.assertEqual(kubecfg.objectHasPath(nested_obj, 'foo.hidden.qux'), false) &&
+  std.assertEqual(kubecfg.objectHasPathAll(nested_obj, 'foo.hidden.qux'), true) &&
 
   true;
 

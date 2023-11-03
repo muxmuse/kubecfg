@@ -57,16 +57,47 @@
   // package (python-ish).
   regexSubst:: std.native('regexSubst'),
 
-  // parseHelmChart(chartData, releaseName, namespace, values): Expand
+  // parseHelmChart(chartData, releaseName, namespace, values, capabilities={}): Expand
   // helm chart into jsonnet objects.  `chartData` should be valid
   // chart .tgz as an array of numbers (bytes).  `values` is a jsonnet
   // object that conforms to a schema defined by the chart.
-  parseHelmChart:: std.native('parseHelmChart'),
+  // `capabilities` is an object matching the struct format of Helm's
+  // "Capabilities" struct. Only "KubeVersion" is supported. For more
+  // information, see:
+  // https://helm.sh/docs/chart_template_guide/builtin_objects/
+  parseHelmChart(chartData, releaseName, namespace, values, capabilities={}):: (
+    std.native('parseHelmChart')(
+      chartData,
+      releaseName,
+      namespace,
+      values,
+      capabilities
+    )
+  ),
 
   // validateJSONSchema(obj, schema): Validates a given object against the provided
   // schema. Returns 'true' is the schema is valid. If this is not the case, an error stream
   // is omitted based on the given schema's rules.
   validateJSONSchema:: std.native('validateJSONSchema'),
+
+  // toOverlay is a function that takes a normal JSON/YAML object {a:{b:c:{d:1}}}
+  // and rewrites it as if it was written as {a+:{b+:c+:{d:1}}}.
+  // Care is taken to use the + operator only for objects, since for scalars and
+  // array it doesn't have the semantic of "extend".
+  //
+  // This behaves similar to std.mergePatch but mergePatch breaks lazy evaluation.
+  toOverlay(v):: (
+    local t = std.type(v);
+    if t == 'object' then {
+      [kv.key]+: $.toOverlay(kv.value)
+      for kv in std.objectKeysValues(v)
+      if std.type(kv.value) == 'object'
+    } + {
+      [kv.key]: kv.value
+      for kv in std.objectKeysValues(v)
+      if std.type(kv.value) != 'object'
+    } else v
+  ),
 
   // isK8sObject(o): Return true iff o is a Kubernetes object.
   isK8sObject(o):: (
@@ -112,6 +143,49 @@
     else
       error ('o must be an object or array of k8s objects, found ' + std.type(o))
   ),
+
+  // Helper function for deciding which standard library implementation to use.
+  local hidden_fields_wrapper(o, f, inc_hidden) = (
+    if inc_hidden then
+      !std.objectHasAll(o, f)
+    else
+      !std.objectHas(o, f)
+  ),
+
+  local objectGetDeep(o, f, default, inc_hidden) = (
+
+    local objectGetDeep_(o, ks) =
+      if hidden_fields_wrapper(o, ks[0], inc_hidden) then
+        default
+      else if std.length(ks) == 1 then
+        o[ks[0]]
+      else
+        objectGetDeep_(o[ks[0]], ks[1:]);
+
+    objectGetDeep_(o, std.split(f, '.'))
+  ),
+
+  local objectHasDeep(o, f, inc_hidden) = (
+    local objectHasDeep_(o, ks) =
+      if hidden_fields_wrapper(o, ks[0], inc_hidden) then
+        false
+      else if std.length(ks) == 1 then
+        true
+      else
+        objectHasDeep_(o[ks[0]], ks[1:]);
+
+    objectHasDeep_(o, std.split(f, '.'))
+  ),
+
+  // getPath(obj, path, default, inc_hidden): Similar to std.get, but with a nested
+  // jsonpath. If a value is not available, then a default or null is returned.
+  getPath(obj, path, default=null, inc_hidden=true):: objectGetDeep(obj, path, default, inc_hidden),
+
+  // objectHasPath(obj, path, inc_hidden): Similar to std.objectHasAll, but with a nested jsonpath.
+  objectHasPath(obj, path, inc_hidden=false):: objectHasDeep(obj, path, inc_hidden),
+
+  // objectHasPathAll(obj path): Shorthand for objectHasPath(obj, path, inc_hidden=true)
+  objectHasPathAll(obj, path):: objectHasDeep(obj, path, inc_hidden=true),
 
   layouts:: {
     // gvkName(accum, o): Helper for 'fold'.  This accumulates a

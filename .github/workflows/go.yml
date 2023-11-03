@@ -24,12 +24,12 @@ jobs:
       VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('gh-action-{0}', github.sha) }}
 
     steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
-          go-version: 1.19
+          go-version: 1.21
           cache: true
 
       - name: Build Binary
@@ -61,7 +61,7 @@ jobs:
           make integrationtest GINKGO="ginkgo $GINKGO_FLAGS"
 
       - name: Upload kubecfg artifact
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3
+        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3
         with:
           name: kubecfg_${{ runner.os }}_${{ runner.arch }}
           path: kubecfg
